@@ -481,7 +481,7 @@ $env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`
 }
 
 function generateGeminiCliContent(baseUrl: string, apiKey: string): FileConfig {
-  const model = 'gemini-2.0-flash'
+  const model = 'gemini-3-flash-preview'
   const modelComment = t('keys.useKeyModal.gemini.modelComment')
   let path: string
   let content: string
