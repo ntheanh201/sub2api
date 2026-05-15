@@ -691,3 +691,18 @@ func (h *DashboardHandler) GetUserBreakdown(c *gin.Context) {
 		"end_date":   endTime.Add(-24 * time.Hour).Format("2006-01-02"),
 	})
 }
+
+// GetAPIKeysLeaderboard returns the global API key leaderboard across all
+// users for the admin "Token Legend" dashboard.
+// GET /api/v1/admin/dashboard/api-keys-leaderboard
+func (h *DashboardHandler) GetAPIKeysLeaderboard(c *gin.Context) {
+	startTime, endTime := parseTimeRange(c)
+
+	resp, err := h.dashboardService.GetAllAPIKeysLeaderboard(c.Request.Context(), startTime, endTime)
+	if err != nil {
+		response.Error(c, 500, "Failed to get api keys leaderboard")
+		return
+	}
+
+	response.Success(c, resp)
+}

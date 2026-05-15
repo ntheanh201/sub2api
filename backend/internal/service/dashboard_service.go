@@ -124,6 +124,33 @@ func (s *DashboardService) GetDashboardStats(ctx context.Context) (*usagestats.D
 	return stats, nil
 }
 
+// GetAllAPIKeysLeaderboard returns aggregated usage across every API key in
+// the system, with owner info, plus a roll-up summary. Used by the admin
+// "Token Legend" dashboard.
+func (s *DashboardService) GetAllAPIKeysLeaderboard(ctx context.Context, startTime, endTime time.Time) (*usagestats.APIKeyLeaderboardResponse, error) {
+	rows, err := s.usageRepo.GetAllAPIKeysLeaderboard(ctx, startTime, endTime)
+	if err != nil {
+		return nil, fmt.Errorf("get all api keys leaderboard: %w", err)
+	}
+
+	resp := &usagestats.APIKeyLeaderboardResponse{Keys: rows}
+	var weightedDurationSum float64
+	for _, row := range rows {
+		resp.Summary.TotalRequests += row.Requests
+		resp.Summary.TotalInputTokens += row.InputTokens
+		resp.Summary.TotalOutputTokens += row.OutputTokens
+		resp.Summary.TotalCacheTokens += row.CacheCreationTokens + row.CacheReadTokens
+		resp.Summary.TotalCost += row.TotalCost
+		resp.Summary.TotalActualCost += row.ActualCost
+		weightedDurationSum += row.AverageDurationMs * float64(row.Requests)
+	}
+	resp.Summary.TotalTokens = resp.Summary.TotalInputTokens + resp.Summary.TotalOutputTokens + resp.Summary.TotalCacheTokens
+	if resp.Summary.TotalRequests > 0 {
+		resp.Summary.AverageDurationMs = weightedDurationSum / float64(resp.Summary.TotalRequests)
+	}
+	return resp, nil
+}
+
 func (s *DashboardService) GetUsageTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8) ([]usagestats.TrendDataPoint, error) {
 	trend, err := s.usageRepo.GetUsageTrendWithFilters(ctx, startTime, endTime, granularity, userID, apiKeyID, accountID, groupID, model, requestType, stream, billingType)
 	if err != nil {

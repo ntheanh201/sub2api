@@ -279,6 +279,34 @@ type BatchAPIKeyUsageStats struct {
 	TotalActualCost float64 `json:"total_actual_cost"`
 }
 
+// APIKeyLeaderboardRow represents one API key's aggregated usage in a date range,
+// joined with the api_keys table for name/status/last_used metadata.
+type APIKeyLeaderboardRow struct {
+	APIKeyID            int64      `json:"api_key_id"`
+	Name                string     `json:"name"`
+	Status              string     `json:"status"`
+	LastUsedAt          *time.Time `json:"last_used_at,omitempty"`
+	UserID              int64      `json:"user_id,omitempty"`
+	UserEmail           string     `json:"user_email,omitempty"`
+	Requests            int64      `json:"requests"`
+	InputTokens         int64      `json:"input_tokens"`
+	OutputTokens        int64      `json:"output_tokens"`
+	CacheCreationTokens int64      `json:"cache_creation_tokens"`
+	CacheReadTokens     int64      `json:"cache_read_tokens"`
+	TotalTokens         int64      `json:"total_tokens"`
+	TotalCost           float64    `json:"total_cost"`
+	ActualCost          float64    `json:"actual_cost"`
+	AverageDurationMs   float64    `json:"average_duration_ms"`
+	CacheHitPct         float64    `json:"cache_hit_pct"`
+}
+
+// APIKeyLeaderboardResponse bundles the per-key rows with an overall summary
+// for the selected date range.
+type APIKeyLeaderboardResponse struct {
+	Summary UsageStats              `json:"summary"`
+	Keys    []*APIKeyLeaderboardRow `json:"keys"`
+}
+
 // AccountUsageHistory represents daily usage history for an account
 type AccountUsageHistory struct {
 	Date       string  `json:"date"`

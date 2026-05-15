@@ -333,6 +333,33 @@ func (s *UsageService) GetBatchAPIKeyUsageStats(ctx context.Context, apiKeyIDs [
 	return stats, nil
 }
 
+// GetUserAPIKeyLeaderboard returns the user's API keys ranked by usage in the
+// given date range, plus an overall summary aggregated across all of them.
+func (s *UsageService) GetUserAPIKeyLeaderboard(ctx context.Context, userID int64, startTime, endTime time.Time) (*usagestats.APIKeyLeaderboardResponse, error) {
+	rows, err := s.usageRepo.GetUserAPIKeyLeaderboard(ctx, userID, startTime, endTime)
+	if err != nil {
+		return nil, fmt.Errorf("get user api key leaderboard: %w", err)
+	}
+
+	resp := &usagestats.APIKeyLeaderboardResponse{Keys: rows}
+
+	var weightedDurationSum float64
+	for _, row := range rows {
+		resp.Summary.TotalRequests += row.Requests
+		resp.Summary.TotalInputTokens += row.InputTokens
+		resp.Summary.TotalOutputTokens += row.OutputTokens
+		resp.Summary.TotalCacheTokens += row.CacheCreationTokens + row.CacheReadTokens
+		resp.Summary.TotalCost += row.TotalCost
+		resp.Summary.TotalActualCost += row.ActualCost
+		weightedDurationSum += row.AverageDurationMs * float64(row.Requests)
+	}
+	resp.Summary.TotalTokens = resp.Summary.TotalInputTokens + resp.Summary.TotalOutputTokens + resp.Summary.TotalCacheTokens
+	if resp.Summary.TotalRequests > 0 {
+		resp.Summary.AverageDurationMs = weightedDurationSum / float64(resp.Summary.TotalRequests)
+	}
+	return resp, nil
+}
+
 // ListWithFilters lists usage logs with admin filters.
 func (s *UsageService) ListWithFilters(ctx context.Context, params pagination.PaginationParams, filters usagestats.UsageLogFilters) ([]UsageLog, *pagination.PaginationResult, error) {
 	logs, result, err := s.usageRepo.ListWithFilters(ctx, params, filters)

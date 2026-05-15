@@ -416,3 +416,43 @@ func (h *UsageHandler) DashboardAPIKeysUsage(c *gin.Context) {
 
 	response.Success(c, gin.H{"stats": stats})
 }
+
+// DashboardAPIKeysLeaderboard returns the user's API keys ranked by usage in a
+// date range, plus an overall summary. Used by the "Token Legend" leaderboard.
+// GET /api/v1/usage/dashboard/api-keys-leaderboard?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+func (h *UsageHandler) DashboardAPIKeysLeaderboard(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	userTZ := c.Query("timezone")
+	var startTime, endTime time.Time
+
+	if startDateStr := c.Query("start_date"); startDateStr != "" {
+		t, err := timezone.ParseInUserLocation("2006-01-02", startDateStr, userTZ)
+		if err != nil {
+			response.BadRequest(c, "Invalid start_date format, use YYYY-MM-DD")
+			return
+		}
+		startTime = t
+	}
+
+	if endDateStr := c.Query("end_date"); endDateStr != "" {
+		t, err := timezone.ParseInUserLocation("2006-01-02", endDateStr, userTZ)
+		if err != nil {
+			response.BadRequest(c, "Invalid end_date format, use YYYY-MM-DD")
+			return
+		}
+		endTime = t.AddDate(0, 0, 1) // half-open [start, end)
+	}
+
+	resp, err := h.usageService.GetUserAPIKeyLeaderboard(c.Request.Context(), subject.UserID, startTime, endTime)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, resp)
+}

@@ -4392,3 +4392,184 @@ func setToSlice(set map[int64]struct{}) []int64 {
 	}
 	return out
 }
+
+// GetUserAPIKeyLeaderboard returns aggregated usage per API key for a single user
+// over a date range. Keys with no usage in the range are still returned with zeros
+// so the dashboard can show idle keys.
+func (r *usageLogRepository) GetUserAPIKeyLeaderboard(ctx context.Context, userID int64, startTime, endTime time.Time) ([]*usagestats.APIKeyLeaderboardRow, error) {
+	if endTime.IsZero() {
+		endTime = time.Now()
+	}
+	if startTime.IsZero() {
+		startTime = endTime.AddDate(0, 0, -7)
+	}
+
+	query := `
+		SELECT
+			ak.id,
+			ak.name,
+			ak.status,
+			ak.last_used_at,
+			COALESCE(stats.requests, 0),
+			COALESCE(stats.input_tokens, 0),
+			COALESCE(stats.output_tokens, 0),
+			COALESCE(stats.cache_creation_tokens, 0),
+			COALESCE(stats.cache_read_tokens, 0),
+			COALESCE(stats.total_cost, 0),
+			COALESCE(stats.actual_cost, 0),
+			COALESCE(stats.avg_duration_ms, 0)
+		FROM api_keys ak
+		LEFT JOIN (
+			SELECT
+				api_key_id,
+				COUNT(*) AS requests,
+				SUM(input_tokens) AS input_tokens,
+				SUM(output_tokens) AS output_tokens,
+				SUM(cache_creation_tokens) AS cache_creation_tokens,
+				SUM(cache_read_tokens) AS cache_read_tokens,
+				SUM(total_cost) AS total_cost,
+				SUM(actual_cost) AS actual_cost,
+				AVG(COALESCE(duration_ms, 0)) AS avg_duration_ms
+			FROM usage_logs
+			WHERE user_id = $1 AND created_at >= $2 AND created_at < $3
+			GROUP BY api_key_id
+		) stats ON stats.api_key_id = ak.id
+		WHERE ak.user_id = $1 AND ak.deleted_at IS NULL
+		ORDER BY COALESCE(stats.actual_cost, 0) DESC, ak.id ASC
+	`
+
+	rows, err := r.sql.QueryContext(ctx, query, userID, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]*usagestats.APIKeyLeaderboardRow, 0)
+	for rows.Next() {
+		var row usagestats.APIKeyLeaderboardRow
+		var lastUsed sql.NullTime
+		if err := rows.Scan(
+			&row.APIKeyID,
+			&row.Name,
+			&row.Status,
+			&lastUsed,
+			&row.Requests,
+			&row.InputTokens,
+			&row.OutputTokens,
+			&row.CacheCreationTokens,
+			&row.CacheReadTokens,
+			&row.TotalCost,
+			&row.ActualCost,
+			&row.AverageDurationMs,
+		); err != nil {
+			return nil, err
+		}
+		if lastUsed.Valid {
+			t := lastUsed.Time
+			row.LastUsedAt = &t
+		}
+		row.TotalTokens = row.InputTokens + row.OutputTokens + row.CacheCreationTokens + row.CacheReadTokens
+		totalReadable := row.InputTokens + row.CacheReadTokens
+		if totalReadable > 0 {
+			row.CacheHitPct = float64(row.CacheReadTokens) / float64(totalReadable) * 100.0
+		}
+		out = append(out, &row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// GetAllAPIKeysLeaderboard is the admin variant: returns aggregated usage per
+// API key across ALL users in the given range, joined with the users table so
+// the dashboard can show the owner of each key.
+func (r *usageLogRepository) GetAllAPIKeysLeaderboard(ctx context.Context, startTime, endTime time.Time) ([]*usagestats.APIKeyLeaderboardRow, error) {
+	if endTime.IsZero() {
+		endTime = time.Now()
+	}
+	if startTime.IsZero() {
+		startTime = endTime.AddDate(0, 0, -7)
+	}
+
+	query := `
+		SELECT
+			ak.id,
+			ak.name,
+			ak.status,
+			ak.last_used_at,
+			ak.user_id,
+			COALESCE(u.email, ''),
+			COALESCE(stats.requests, 0),
+			COALESCE(stats.input_tokens, 0),
+			COALESCE(stats.output_tokens, 0),
+			COALESCE(stats.cache_creation_tokens, 0),
+			COALESCE(stats.cache_read_tokens, 0),
+			COALESCE(stats.total_cost, 0),
+			COALESCE(stats.actual_cost, 0),
+			COALESCE(stats.avg_duration_ms, 0)
+		FROM api_keys ak
+		LEFT JOIN users u ON u.id = ak.user_id AND u.deleted_at IS NULL
+		LEFT JOIN (
+			SELECT
+				api_key_id,
+				COUNT(*) AS requests,
+				SUM(input_tokens) AS input_tokens,
+				SUM(output_tokens) AS output_tokens,
+				SUM(cache_creation_tokens) AS cache_creation_tokens,
+				SUM(cache_read_tokens) AS cache_read_tokens,
+				SUM(total_cost) AS total_cost,
+				SUM(actual_cost) AS actual_cost,
+				AVG(COALESCE(duration_ms, 0)) AS avg_duration_ms
+			FROM usage_logs
+			WHERE created_at >= $1 AND created_at < $2
+			GROUP BY api_key_id
+		) stats ON stats.api_key_id = ak.id
+		WHERE ak.deleted_at IS NULL
+		ORDER BY COALESCE(stats.actual_cost, 0) DESC, ak.id ASC
+	`
+
+	rows, err := r.sql.QueryContext(ctx, query, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]*usagestats.APIKeyLeaderboardRow, 0)
+	for rows.Next() {
+		var row usagestats.APIKeyLeaderboardRow
+		var lastUsed sql.NullTime
+		if err := rows.Scan(
+			&row.APIKeyID,
+			&row.Name,
+			&row.Status,
+			&lastUsed,
+			&row.UserID,
+			&row.UserEmail,
+			&row.Requests,
+			&row.InputTokens,
+			&row.OutputTokens,
+			&row.CacheCreationTokens,
+			&row.CacheReadTokens,
+			&row.TotalCost,
+			&row.ActualCost,
+			&row.AverageDurationMs,
+		); err != nil {
+			return nil, err
+		}
+		if lastUsed.Valid {
+			t := lastUsed.Time
+			row.LastUsedAt = &t
+		}
+		row.TotalTokens = row.InputTokens + row.OutputTokens + row.CacheCreationTokens + row.CacheReadTokens
+		totalReadable := row.InputTokens + row.CacheReadTokens
+		if totalReadable > 0 {
+			row.CacheHitPct = float64(row.CacheReadTokens) / float64(totalReadable) * 100.0
+		}
+		out = append(out, &row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}

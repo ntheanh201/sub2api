@@ -216,6 +216,9 @@
           </div>
         </div>
 
+        <!-- API Key Token Legend (global leaderboard) -->
+        <UserApiKeyLeaderboard :admin="true" />
+
         <!-- Charts Section -->
         <div class="space-y-6">
           <!-- Date Range Filter -->
@@ -313,6 +316,7 @@ import Icon from '@/components/icons/Icon.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import Select from '@/components/common/Select.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
+import UserApiKeyLeaderboard from '@/components/user/dashboard/UserApiKeyLeaderboard.vue'
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 
 import {
