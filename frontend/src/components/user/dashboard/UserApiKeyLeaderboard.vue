@@ -133,7 +133,9 @@
               >
                 Cost {{ sortArrow('actual_cost') }}
               </th>
-              <th class="px-3 py-2 text-right">Cache Hit</th>
+              <th class="px-3 py-2 text-right" title="Cache reuse % (cache_read / (cache_read + cache_creation)) and dollars saved vs no-cache">
+                Cache
+              </th>
               <th
                 class="cursor-pointer px-3 py-2 text-right hover:text-gray-700 dark:hover:text-gray-300"
                 @click="setSort('average_duration_ms')"
@@ -180,15 +182,24 @@
                 <span :class="costClass(row.actual_cost)">${{ row.actual_cost.toFixed(4) }}</span>
               </td>
               <td class="px-3 py-2.5 text-right">
-                <div v-if="row.requests > 0" class="flex items-center justify-end gap-2">
-                  <div class="h-1.5 w-16 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
-                    <div
-                      class="h-full"
-                      :class="cacheBarClass(row.cache_hit_pct)"
-                      :style="{ width: `${Math.min(row.cache_hit_pct, 100)}%` }"
-                    ></div>
+                <div v-if="row.requests > 0" class="flex flex-col items-end gap-0.5">
+                  <div class="flex items-center gap-2">
+                    <div class="h-1.5 w-16 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+                      <div
+                        class="h-full"
+                        :class="cacheBarClass(row.cache_reuse_pct)"
+                        :style="{ width: `${Math.min(row.cache_reuse_pct, 100)}%` }"
+                      ></div>
+                    </div>
+                    <span class="w-10 tabular-nums text-xs text-gray-500">{{ row.cache_reuse_pct.toFixed(0) }}%</span>
                   </div>
-                  <span class="w-10 tabular-nums text-xs text-gray-500">{{ row.cache_hit_pct.toFixed(0) }}%</span>
+                  <span
+                    v-if="row.cache_savings > 0"
+                    class="text-[10px] text-emerald-600 dark:text-emerald-400 tabular-nums"
+                    :title="`Dollars saved vs no-cache: $${row.cache_savings.toFixed(2)}`"
+                  >
+                    saved ${{ formatSavings(row.cache_savings) }}
+                  </span>
                 </div>
                 <span v-else class="text-xs text-gray-400">—</span>
               </td>
@@ -235,11 +246,14 @@ interface LeaderboardRow {
   output_tokens: number
   cache_creation_tokens: number
   cache_read_tokens: number
+  input_cost: number
+  cache_read_cost: number
   total_tokens: number
   total_cost: number
   actual_cost: number
   average_duration_ms: number
-  cache_hit_pct: number
+  cache_reuse_pct: number
+  cache_savings: number
 }
 
 interface Summary {
@@ -363,6 +377,12 @@ const cacheBarClass = (pct: number) => {
   if (pct < 20) return 'bg-red-400'
   if (pct < 50) return 'bg-amber-400'
   return 'bg-emerald-500'
+}
+
+const formatSavings = (n: number) => {
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K'
+  if (n >= 100) return n.toFixed(0)
+  return n.toFixed(2)
 }
 
 const formatTokens = (n: number) => {

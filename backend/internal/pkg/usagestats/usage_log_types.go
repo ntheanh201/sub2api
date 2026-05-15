@@ -294,10 +294,18 @@ type APIKeyLeaderboardRow struct {
 	CacheCreationTokens int64      `json:"cache_creation_tokens"`
 	CacheReadTokens     int64      `json:"cache_read_tokens"`
 	TotalTokens         int64      `json:"total_tokens"`
+	InputCost           float64    `json:"input_cost"`
+	CacheReadCost       float64    `json:"cache_read_cost"`
 	TotalCost           float64    `json:"total_cost"`
 	ActualCost          float64    `json:"actual_cost"`
 	AverageDurationMs   float64    `json:"average_duration_ms"`
-	CacheHitPct         float64    `json:"cache_hit_pct"`
+	// CacheReusePct is cache_read / (cache_read + cache_creation) × 100. It
+	// flags users who build cache but rarely reuse it (low cache efficiency).
+	CacheReusePct float64 `json:"cache_reuse_pct"`
+	// CacheSavings is the dollar amount saved by reading from cache, derived
+	// from this row's own input unit cost so it adapts to per-user rate
+	// multipliers and to non-Anthropic providers.
+	CacheSavings float64 `json:"cache_savings"`
 }
 
 // APIKeyLeaderboardResponse bundles the per-key rows with an overall summary

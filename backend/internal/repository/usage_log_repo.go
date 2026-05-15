@@ -4415,6 +4415,8 @@ func (r *usageLogRepository) GetUserAPIKeyLeaderboard(ctx context.Context, userI
 			COALESCE(stats.output_tokens, 0),
 			COALESCE(stats.cache_creation_tokens, 0),
 			COALESCE(stats.cache_read_tokens, 0),
+			COALESCE(stats.input_cost, 0),
+			COALESCE(stats.cache_read_cost, 0),
 			COALESCE(stats.total_cost, 0),
 			COALESCE(stats.actual_cost, 0),
 			COALESCE(stats.avg_duration_ms, 0)
@@ -4427,6 +4429,8 @@ func (r *usageLogRepository) GetUserAPIKeyLeaderboard(ctx context.Context, userI
 				SUM(output_tokens) AS output_tokens,
 				SUM(cache_creation_tokens) AS cache_creation_tokens,
 				SUM(cache_read_tokens) AS cache_read_tokens,
+				SUM(input_cost) AS input_cost,
+				SUM(cache_read_cost) AS cache_read_cost,
 				SUM(total_cost) AS total_cost,
 				SUM(actual_cost) AS actual_cost,
 				AVG(COALESCE(duration_ms, 0)) AS avg_duration_ms
@@ -4458,6 +4462,8 @@ func (r *usageLogRepository) GetUserAPIKeyLeaderboard(ctx context.Context, userI
 			&row.OutputTokens,
 			&row.CacheCreationTokens,
 			&row.CacheReadTokens,
+			&row.InputCost,
+			&row.CacheReadCost,
 			&row.TotalCost,
 			&row.ActualCost,
 			&row.AverageDurationMs,
@@ -4469,16 +4475,35 @@ func (r *usageLogRepository) GetUserAPIKeyLeaderboard(ctx context.Context, userI
 			row.LastUsedAt = &t
 		}
 		row.TotalTokens = row.InputTokens + row.OutputTokens + row.CacheCreationTokens + row.CacheReadTokens
-		totalReadable := row.InputTokens + row.CacheReadTokens
-		if totalReadable > 0 {
-			row.CacheHitPct = float64(row.CacheReadTokens) / float64(totalReadable) * 100.0
-		}
+		fillCacheMetrics(&row)
 		out = append(out, &row)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+// fillCacheMetrics computes CacheReusePct and CacheSavings on a row using its
+// own aggregated input cost as the unit-rate reference. Falls back to a 9×
+// multiplier on cache_read_cost when fresh-input data isn't available (matches
+// Anthropic's ~10% cache pricing convention).
+func fillCacheMetrics(row *usagestats.APIKeyLeaderboardRow) {
+	cacheBudget := row.CacheReadTokens + row.CacheCreationTokens
+	if cacheBudget > 0 {
+		row.CacheReusePct = float64(row.CacheReadTokens) / float64(cacheBudget) * 100.0
+	}
+	switch {
+	case row.InputTokens > 0 && row.CacheReadTokens > 0 && row.InputCost > 0:
+		inputRate := row.InputCost / float64(row.InputTokens)
+		hypothetical := inputRate * float64(row.CacheReadTokens)
+		savings := hypothetical - row.CacheReadCost
+		if savings > 0 {
+			row.CacheSavings = savings
+		}
+	case row.CacheReadCost > 0:
+		row.CacheSavings = row.CacheReadCost * 9
+	}
 }
 
 // GetAllAPIKeysLeaderboard is the admin variant: returns aggregated usage per
@@ -4505,6 +4530,8 @@ func (r *usageLogRepository) GetAllAPIKeysLeaderboard(ctx context.Context, start
 			COALESCE(stats.output_tokens, 0),
 			COALESCE(stats.cache_creation_tokens, 0),
 			COALESCE(stats.cache_read_tokens, 0),
+			COALESCE(stats.input_cost, 0),
+			COALESCE(stats.cache_read_cost, 0),
 			COALESCE(stats.total_cost, 0),
 			COALESCE(stats.actual_cost, 0),
 			COALESCE(stats.avg_duration_ms, 0)
@@ -4518,6 +4545,8 @@ func (r *usageLogRepository) GetAllAPIKeysLeaderboard(ctx context.Context, start
 				SUM(output_tokens) AS output_tokens,
 				SUM(cache_creation_tokens) AS cache_creation_tokens,
 				SUM(cache_read_tokens) AS cache_read_tokens,
+				SUM(input_cost) AS input_cost,
+				SUM(cache_read_cost) AS cache_read_cost,
 				SUM(total_cost) AS total_cost,
 				SUM(actual_cost) AS actual_cost,
 				AVG(COALESCE(duration_ms, 0)) AS avg_duration_ms
@@ -4551,6 +4580,8 @@ func (r *usageLogRepository) GetAllAPIKeysLeaderboard(ctx context.Context, start
 			&row.OutputTokens,
 			&row.CacheCreationTokens,
 			&row.CacheReadTokens,
+			&row.InputCost,
+			&row.CacheReadCost,
 			&row.TotalCost,
 			&row.ActualCost,
 			&row.AverageDurationMs,
@@ -4562,10 +4593,7 @@ func (r *usageLogRepository) GetAllAPIKeysLeaderboard(ctx context.Context, start
 			row.LastUsedAt = &t
 		}
 		row.TotalTokens = row.InputTokens + row.OutputTokens + row.CacheCreationTokens + row.CacheReadTokens
-		totalReadable := row.InputTokens + row.CacheReadTokens
-		if totalReadable > 0 {
-			row.CacheHitPct = float64(row.CacheReadTokens) / float64(totalReadable) * 100.0
-		}
+		fillCacheMetrics(&row)
 		out = append(out, &row)
 	}
 	if err := rows.Err(); err != nil {
