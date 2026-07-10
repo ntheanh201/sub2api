@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	gocache "github.com/patrickmn/go-cache"
 )
@@ -211,75 +213,6 @@ func buildRequestTypeFilterCondition(startArgIndex int, requestType int16) (stri
 	default:
 		return fmt.Sprintf("request_type = $%d", startArgIndex), []any{requestTypeArg}
 	}
-}
-
-func nullInt64(v *int64) sql.NullInt64 {
-	if v == nil {
-		return sql.NullInt64{}
-	}
-	return sql.NullInt64{Int64: *v, Valid: true}
-}
-
-func nullInt(v *int) sql.NullInt64 {
-	if v == nil {
-		return sql.NullInt64{}
-	}
-	return sql.NullInt64{Int64: int64(*v), Valid: true}
-}
-
-func nullFloat64Ptr(v sql.NullFloat64) *float64 {
-	if !v.Valid {
-		return nil
-	}
-	out := v.Float64
-	return &out
-}
-
-func nullString(v *string) sql.NullString {
-	if v == nil || *v == "" {
-		return sql.NullString{}
-	}
-	return sql.NullString{String: *v, Valid: true}
-}
-
-func nullStringIntMapJSON(v map[string]int) any {
-	if len(v) == 0 {
-		return nil
-	}
-	payload, err := json.Marshal(v)
-	if err != nil {
-		return nil
-	}
-	return string(payload)
-}
-
-func stringIntMapFromNullJSON(v sql.NullString) map[string]int {
-	if !v.Valid || strings.TrimSpace(v.String) == "" {
-		return nil
-	}
-	var out map[string]int
-	if err := json.Unmarshal([]byte(v.String), &out); err != nil {
-		return nil
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-func coalesceTrimmedString(v sql.NullString, fallback string) string {
-	if v.Valid && strings.TrimSpace(v.String) != "" {
-		return v.String
-	}
-	return fallback
-}
-
-func setToSlice(set map[int64]struct{}) []int64 {
-	out := make([]int64, 0, len(set))
-	for id := range set {
-		out = append(out, id)
-	}
-	return out
 }
 
 // GetUserAPIKeyLeaderboard returns aggregated usage per API key for a single user
